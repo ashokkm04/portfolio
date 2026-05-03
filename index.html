@@ -609,61 +609,47 @@ async function editPrice(table, id) {
 async function fetchLivePrices(symbols) {
   if (!symbols.length) return {};
   const prices = {};
-
-  // Batch all symbols in one request using Yahoo Finance /v7/finance/quote
-  // which accepts comma-separated symbols — far more reliable than one-by-one
-  const BATCH = 20; // Yahoo accepts up to ~20 symbols per call
-  const chunks = [];
-  for (let i = 0; i < symbols.length; i += BATCH)
-    chunks.push(symbols.slice(i, i + BATCH));
-
-  for (const chunk of chunks) {
-    const joined = chunk.map(encodeURIComponent).join('%2C');
-    const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${joined}&fields=regularMarketPrice,symbol`;
-
-    // Try proxies in order — corsproxy.io is most reliable based on testing
-    const proxies = [
-      `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
-      `https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl)}`,
-      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
-    ];
-
-    let fetched = false;
-    for (const proxyUrl of proxies) {
-      try {
-        const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
-        if (!res.ok) continue;
-        let d = await res.json();
-        // allorigins wraps response
-        if (typeof d.contents === 'string') d = JSON.parse(d.contents);
-        const results = d?.quoteResponse?.result || [];
-        if (results.length) {
-          results.forEach(q => {
-            if (q.regularMarketPrice != null) {
-              prices[q.symbol] = q.regularMarketPrice;
-              console.log(`✓ ${q.symbol} = ${q.regularMarketPrice}`);
-            }
-          });
-          fetched = true;
-          break; // this proxy worked, move to next chunk
-        }
-      } catch(e) { /* try next proxy */ }
-    }
-
-    if (!fetched) {
-      // Last resort: fetch each symbol individually via corsproxy
-      await Promise.all(chunk.map(async sym => {
-        try {
-          const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1d`;
-          const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(8000) });
-          if (!res.ok) return;
-          const d = await res.json();
-          const p = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
-          if (p != null && p > 0) { prices[sym] = p; console.log(`✓ ${sym} = ${p} (chart)`); }
-        } catch(e) { console.warn(`Failed: ${sym}`); }
-      }));
-    }
+  const joined = symbols.map(encodeURIComponent).join('%2C');
+  const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${joined}&fields=regularMarketPrice,symbol`;
+  const proxies = [
+    { url: `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`, wrap: false },
+    { url: `https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl)}`, wrap: true },
+    { url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`, wrap: false },
+  ];
+  for (const proxy of proxies) {
+    try {
+      const res = await fetch(proxy.url, { signal: AbortSignal.timeout(10000) });
+      if (!res.ok) continue;
+      let d = await res.json();
+      if (proxy.wrap && typeof d.contents === 'string') d = JSON.parse(d.contents);
+      const results = d?.quoteResponse?.result || [];
+      if (results.length > 0) {
+        results.forEach(q => { if (q.regularMarketPrice != null) { prices[q.symbol] = q.regularMarketPrice; console.log(`checkmark ${q.symbol} = ${q.regularMarketPrice}`); } });
+        const missing = symbols.filter(s => prices[s] == null);
+        await Promise.all(missing.map(async sym => {
+          try {
+            const u = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1d`;
+            const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(u)}`, { signal: AbortSignal.timeout(8000) });
+            if (!r.ok) return;
+            const dq = await r.json();
+            const p = dq?.chart?.result?.[0]?.meta?.regularMarketPrice;
+            if (p != null && p > 0) { prices[sym] = p; console.log(`checkmark ${sym} = ${p} (fallback)`); }
+          } catch(e) { console.warn(`Failed: ${sym}`); }
+        }));
+        return prices;
+      }
+    } catch(e) { /* try next */ }
   }
+  await Promise.all(symbols.map(async sym => {
+    try {
+      const u = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1d`;
+      const r = await fetch(`https://corsproxy.io/?${encodeURIComponent(u)}`, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) return;
+      const d = await r.json();
+      const p = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      if (p != null && p > 0) { prices[sym] = p; console.log(`checkmark ${sym} = ${p}`); }
+    } catch(e) { console.warn(`Failed: ${sym}`); }
+  }));
   return prices;
 }
 
