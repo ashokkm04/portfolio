@@ -391,6 +391,7 @@ td{padding:10px 13px;font-size:0.72rem;color:var(--text);white-space:nowrap;}
 //  SUPABASE INIT
 // ═══════════════════════════════════════════
 const SUPA_URL = 'https://hmsbommveuqetqvrkkmi.supabase.co';
+const TWELVEDATA_KEY = '760da15cc17140cab349fff3ed77d7af'; // Replace after signup at twelvedata.com
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhtc2JvbW12ZXVxZXRxdnJra21pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3MTAxNzMsImV4cCI6MjA5MzI4NjE3M30.4PXa4tB89NOrib3ila4rCtkhi7ZBgRtGjrDp2gqMyzk';
 const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 
@@ -613,7 +614,7 @@ async function editPrice(table, id) {
 // ═══════════════════════════════════════════
 async function fetchLivePrices(symbols) {
   if (!symbols.length) return {};
-  // Use Supabase Edge Function — runs server-side, no CORS issues
+  // Use Supabase Edge Function with Twelve Data API
   try {
     const res = await fetch(`${SUPA_URL}/functions/v1/get-prices`, {
       method: 'POST',
@@ -621,15 +622,17 @@ async function fetchLivePrices(symbols) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${SUPA_KEY}`
       },
-      body: JSON.stringify({ symbols }),
+      body: JSON.stringify({ symbols, apikey: TWELVEDATA_KEY }),
       signal: AbortSignal.timeout(15000)
     });
     if (!res.ok) throw new Error(`Edge function error: ${res.status}`);
     const prices = await res.json();
+    if (prices.error) throw new Error(prices.error);
     Object.entries(prices).forEach(([sym, p]) => console.log(`checkmark ${sym} = ${p}`));
     return prices;
   } catch(e) {
     console.error('Price fetch failed:', e.message);
+    toast('Price fetch failed: ' + e.message, 'warn');
     return {};
   }
 }
