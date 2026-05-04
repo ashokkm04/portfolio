@@ -595,16 +595,28 @@ async function del(table, id) {
 //  EDIT PRICE INLINE
 // ═══════════════════════════════════════════
 async function editPrice(table, id) {
-  const val = prompt('Enter updated current price:');
-  if (val === null) return;
-  const current_price = parseFloat(val);
-  if (isNaN(current_price)) { toast('Invalid price','warn'); return; }
+  // Find the cell that was clicked and replace with inline input
+  const cell = document.querySelector(`[data-edit-id="${id}"]`);
+  if (!cell) return;
+  const current = DB[table].find(h => h.id === id)?.current_price || 0;
+  cell.innerHTML = `<input id="editInp_${id}" type="number" step="0.01" value="${current}"
+    style="width:90px;background:var(--surface2);border:1px solid var(--gold);color:var(--text);
+    border-radius:4px;padding:2px 6px;font-size:.75rem;"
+    onkeydown="if(event.key==='Enter')savePrice('${table}','${id}');if(event.key==='Escape')renderAll();"
+    onblur="savePrice('${table}','${id}')"
+  >`;
+  const inp = document.getElementById(`editInp_${id}`);
+  if (inp) { inp.focus(); inp.select(); }
+}
 
+async function savePrice(table, id) {
+  const inp = document.getElementById(`editInp_${id}`);
+  if (!inp) return;
+  const current_price = parseFloat(inp.value);
+  if (isNaN(current_price) || current_price <= 0) { toast('Invalid price','warn'); renderAll(); return; }
   const { error } = await sb.from(table).update({ current_price }).eq('id', id);
-  if (error) { toast('Update failed','err'); return; }
-
-  const key = table;
-  DB[key] = DB[key].map(h => h.id === id ? {...h, current_price} : h);
+  if (error) { toast('Update failed','err'); renderAll(); return; }
+  DB[table] = DB[table].map(h => h.id === id ? {...h, current_price} : h);
   renderAll();
   toast('Price updated ✓');
 }
@@ -751,7 +763,7 @@ function renderDegiro() {
       <td>${catBadge(r.type)}</td>
       <td>${r.qty}</td>
       <td>${fmtE(r.buy)}</td>
-      <td class="degiro-t editable" title="Click to edit" onclick="editPrice('degiro','${r.id}')">${fmtE(r.current_price)} ✎</td>
+      <td class="degiro-t editable" data-edit-id="${r.id}" title="Click to edit" onclick="editPrice('degiro','${r.id}')">${fmtE(r.current_price)} ✎</td>
       <td>${fmtE(inv)}</td>
       <td class="degiro-t">${fmtE(val)}</td>
       <td class="${pl>=0?'pos':'neg'}">${pl>=0?'+':''}${fmtE(pl)} (${pct(val,inv)})</td>
@@ -778,7 +790,7 @@ function renderZerodha() {
       <td>${catBadge(r.type)}</td>
       <td>${r.qty}</td>
       <td>${fmtI(r.buy)}</td>
-      <td class="zerodha-t editable" title="Click to edit" onclick="editPrice('zerodha','${r.id}')">${fmtI(r.current_price)} ✎</td>
+      <td class="zerodha-t editable" data-edit-id="${r.id}" title="Click to edit" onclick="editPrice('zerodha','${r.id}')">${fmtI(r.current_price)} ✎</td>
       <td>${fmtI(inv)}</td>
       <td class="zerodha-t">${fmtI(val)}</td>
       <td class="${pl>=0?'pos':'neg'}">${pl>=0?'+':''}${fmtI(pl)} (${pct(val,inv)})</td>
